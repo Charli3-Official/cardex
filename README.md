@@ -4,6 +4,7 @@
     <p>
         <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python version">
         <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
+        <img src="https://img.shields.io/pypi/dm/charli3-dendrite?style=flat-square" />
         <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs welcome">
     </p>
 </div>
