@@ -6,6 +6,7 @@ from charli3_dendrite.dataclasses.models import DendriteBaseModel
 from charli3_dendrite.dataclasses.models import PoolStateList
 from charli3_dendrite.dataclasses.models import ScriptReference
 from charli3_dendrite.dataclasses.models import SwapTransactionList
+from charli3_dendrite.backend.blockfrost.models import PoolOutput, UTxO, UTxOList
 
 
 class AbstractDBSyncStructure(ABC):
@@ -175,3 +176,24 @@ COALESCE(
     def parse(cls, data: dict | list[dict]) -> SwapTransactionList:
         """Parse and validate orders."""
         return SwapTransactionList.model_validate(data)
+
+
+def parse_pool_outputs(data: dict) -> PoolStateList:
+    """Parse pool outputs from the given data."""
+    pool_outputs = [PoolOutput(**item) for item in data]
+    return PoolStateList(root=pool_outputs)
+
+
+def select_utxos_for_swaps(utxos: UTxOList, required_amount: int) -> list[UTxO]:
+    """Select UTxOs for swaps based on the required amount."""
+    selected_utxos = []
+    total_amount = 0
+
+    for utxo in utxos:
+        selected_utxos.append(utxo)
+        total_amount += int(utxo.amount[0].quantity)  # Assuming the first asset is the one we need
+
+        if total_amount >= required_amount:
+            break
+
+    return selected_utxos

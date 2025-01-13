@@ -12,6 +12,11 @@ from pycardano import PlutusData
 from pycardano import PlutusV1Script
 from pycardano import PlutusV2Script
 from pycardano import VerificationKeyHash
+from pycardano import Redeemer
+from pycardano import TransactionBuilder
+from pycardano import TransactionOutput
+from pycardano import Transaction
+from pycardano import BlockFrostBackend
 
 from charli3_dendrite.dataclasses.datums import AssetClass
 from charli3_dendrite.dataclasses.datums import OrderDatum
@@ -882,249 +887,43 @@ class MinswapCPPState(AbstractConstantProductPoolState):
     def dex_policy(cls) -> list[str]:
         return ["13aa2accf2e1561723aa26871e071fdf32c867cff7e7d50ad470d62f"]
 
-
-class MinswapV2CPPState(AbstractConstantProductPoolState):
-    """Minswap Constant Product Pool State."""
-
-    fee: int | list[int] = [30, 30]
-    _batcher = Assets(lovelace=1000000)
-    _deposit = Assets(lovelace=2000000)
-    _stake_address: ClassVar[Address] = [
-        Address.from_primitive(
-            "addr1z8p79rpkcdz8x9d6tft0x0dx5mwuzac2sa4gm8cvkw5hcn864negmna25tfcqjjxj65tnk0d0fmkza3gjdrxweaff35q0ym7k8",
-        ),
-    ]
-
     @classmethod
-    def dex(cls) -> str:
-        return "MinswapV2"
+    def cancel_redeemer(cls) -> PlutusData:
+        return Redeemer(BoolFalse())
 
-    @classmethod
-    def order_selector(self) -> list[str]:
-        return [s.encode() for s in self._stake_address]
+    def gather_utxos(self, wallet_address: str) -> list:
+        """Gather UTxOs from the wallet."""
+        backend = BlockFrostBackend()
+        utxos = backend.get_utxos(wallet_address)
+        return utxos
 
-    @classmethod
-    def pool_selector(cls) -> PoolSelector:
-        return PoolSelector(
-            addresses=["addr1w84q0denmyep98ph3tmzwsmw0j7zau9ljmsqx6a4rvaau6ca7j5v4"],
-            assets=[
-                "f5808c2c990d86da54bfc97d89cee6efa20cd8461616359478d96b4c4d5350",
-            ],
+    def create_redeemer(self) -> Redeemer:
+        """Create a redeemer for the swap."""
+        return Redeemer(BoolFalse())
+
+    def sign_swap_transaction(self, transaction: Transaction) -> Transaction:
+        """Sign the swap transaction."""
+        # Implement the signing logic here
+        return transaction
+
+    def handle_collateral(self, builder: TransactionBuilder, collateral_utxo: TransactionOutput):
+        """Handle collateral for Plutus V2."""
+        builder.collaterals = [collateral_utxo]
+
+    def swap_transaction(self, wallet_address: str, in_assets: Assets, out_assets: Assets) -> Transaction:
+        """Create and sign a swap transaction."""
+        utxos = self.gather_utxos(wallet_address)
+        builder = TransactionBuilder()
+        swap_utxo, swap_datum = self.swap_utxo(
+            address_source=Address(wallet_address),
+            in_assets=in_assets,
+            out_assets=out_assets,
         )
-
-    @property
-    def swap_forward(self) -> bool:
-        return True
-
-    @property
-    def stake_address(self) -> Address:
-        return self._stake_address[0]
-
-    @classmethod
-    def order_datum_class(self) -> type[MinswapV2OrderDatum]:
-        return MinswapV2OrderDatum
-
-    @classmethod
-    def script_class(self) -> type[PlutusV2Script]:
-        return PlutusV2Script
-
-    @classmethod
-    def pool_datum_class(self) -> type[MinswapV2PoolDatum]:
-        return MinswapV2PoolDatum
-
-    def batcher_fee(
-        self,
-        in_assets: Assets | None = None,
-        out_assets: Assets | None = None,
-        extra_assets: Assets | None = None,
-    ) -> Assets:
-        """Batcher fee.
-
-        For Minswap, the batcher fee decreases linearly from 2.0 ADA to 1.5 ADA as the
-        MIN in the input assets from 0 - 25,000 MIN.
-        """
-        MIN = "29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c64d494e"
-        if extra_assets is not None and MIN in extra_assets:
-            fee_reduction = min(extra_assets[MIN] // (2 * 10**5), 250000)
-        else:
-            fee_reduction = 0
-        return self._batcher - Assets(lovelace=fee_reduction)
-
-    @property
-    def pool_id(self) -> str:
-        """A unique identifier for the pool."""
-        return self.lp_tokens.unit()
-
-    @classmethod
-    def lp_policy(cls) -> list[str]:
-        return ["f5808c2c990d86da54bfc97d89cee6efa20cd8461616359478d96b4c"]
-
-    @classmethod
-    def dex_policy(cls) -> list[str]:
-        return ["f5808c2c990d86da54bfc97d89cee6efa20cd8461616359478d96b4c4d5350"]
-
-    @classmethod
-    def post_init(cls, values):
-        super().post_init(values)
-
-        datum = MinswapV2PoolDatum.from_cbor(values["datum_cbor"])
-
-        assets = values["assets"]
-        assets.root[assets.unit()] = datum.reserve_a
-        assets.root[assets.unit(1)] = datum.reserve_b
-
-        values["fee"] = [datum.base_fee_a_numerator, datum.base_fee_b_numerator]
-
-
-class MinswapDJEDiUSDStableState(AbstractCommonStableSwapPoolState, MinswapCPPState):
-    """Minswap DJED/iUSD Stable State."""
-
-    fee: float = 1
-    _batcher = Assets(lovelace=2000000)
-    _deposit = Assets(lovelace=2000000)
-    _stake_address: ClassVar[Address] = [
-        Address.from_primitive(
-            "addr1w9xy6edqv9hkptwzewns75ehq53nk8t73je7np5vmj3emps698n9g",
-        ),
-    ]
-
-    @classmethod
-    def order_datum_class(cls) -> type[MinswapStableOrderDatum]:
-        return MinswapStableOrderDatum
-
-    def get_amount_out(
-        self,
-        asset: Assets,
-        precise: bool = True,
-    ) -> tuple[Assets, float]:
-        out_asset, slippage = super().get_amount_out(
-            asset=asset,
-            precise=precise,
-            fee_on_input=False,
-        )
-
-        return out_asset, slippage
-
-    def get_amount_in(
-        self,
-        asset: Assets,
-        precise: bool = True,
-    ) -> tuple[Assets, float]:
-        in_asset, slippage = super().get_amount_in(
-            asset=asset,
-            precise=precise,
-            fee_on_input=False,
-        )
-
-        return in_asset, slippage
-
-    @classmethod
-    def post_init(cls, values: dict[str, ...]):
-        """Post initialization checks.
-
-        Args:
-            values: The pool initialization parameters
-        """
-        super().post_init(values)
-        assets = values["assets"]
-
-        datum = cls.pool_datum_class().from_cbor(values["datum_cbor"])
-
-        assets.root[assets.unit()] = datum.balances[0]
-        assets.root[assets.unit(1)] = datum.balances[1]
-
-        return values
-
-    @property
-    def amp(self) -> int:
-        return self.pool_datum.amp
-
-    @classmethod
-    def pool_selector(cls) -> PoolSelector:
-        return PoolSelector(
-            addresses=["addr1wy7kkcpuf39tusnnyga5t2zcul65dwx9yqzg7sep3cjscesx2q5m5"],
-            assets=[
-                "5d4b6afd3344adcf37ccef5558bb87f522874578c32f17160512e398444a45442d695553442d534c50",
-            ],
-        )
-
-    @classmethod
-    def pool_datum_class(self) -> type[MinswapDJEDiUSDStablePoolDatum]:
-        return MinswapDJEDiUSDStablePoolDatum
-
-    @property
-    def pool_id(self) -> str:
-        """A unique identifier for the pool."""
-        return self.pool_nft.unit()
-
-    @classmethod
-    def pool_policy(cls) -> list[str]:
-        return [
-            "5d4b6afd3344adcf37ccef5558bb87f522874578c32f17160512e398444a45442d695553442d534c50",
-        ]
-
-    @classmethod
-    def lp_policy(cls) -> list[str] | None:
-        return None
-
-    @classmethod
-    def dex_policy(cls) -> list[str] | None:
-        return None
-
-
-class MinswapDJEDUSDCStableState(MinswapDJEDiUSDStableState):
-    """Minswap DJED/USDC Stable State."""
-
-    asset_mulitipliers: list[int] = [1, 100]
-
-    _stake_address: ClassVar[Address] = [
-        Address.from_primitive(
-            "addr1w93d8cuht3hvqt2qqfjqgyek3gk5d6ss2j93e5sh505m0ng8cmze2",
-        ),
-    ]
-
-    @classmethod
-    def pool_selector(cls) -> PoolSelector:
-        return PoolSelector(
-            addresses=["addr1wx8d45xlfrlxd7tctve8xgdtk59j849n00zz2pgyvv47t8sxa6t53"],
-            assets=[
-                "d97fa91daaf63559a253970365fb219dc4364c028e5fe0606cdbfff9555344432d444a45442d534c50",
-            ],
-        )
-
-    @classmethod
-    def pool_datum_class(self) -> type[MinswapDJEDUSDCStablePoolDatum]:
-        return MinswapDJEDUSDCStablePoolDatum
-
-    @classmethod
-    def pool_policy(cls) -> list[str]:
-        return [
-            "d97fa91daaf63559a253970365fb219dc4364c028e5fe0606cdbfff9555344432d444a45442d534c50",
-        ]
-
-
-class MinswapDJEDUSDMStableState(MinswapDJEDiUSDStableState):
-    _stake_address: ClassVar[Address] = [
-        Address.from_primitive(
-            "addr1wxr9ppdymqgw6g0hvaaa7wc6j0smwh730ujx6lczgdynehsguav8d",
-        ),
-    ]
-
-    @classmethod
-    def pool_selector(cls) -> PoolSelector:
-        return PoolSelector(
-            addresses=["addr1wxxdvtj6y4fut4tmu796qpvy2xujtd836yg69ahat3e6jjcelrf94"],
-            assets=[
-                "07b0869ed7488657e24ac9b27b3f0fb4f76757f444197b2a38a15c3c444a45442d5553444d2d534c50",
-            ],
-        )
-
-    @classmethod
-    def pool_datum_class(self) -> type[MinswapDJEDUSDMStablePoolDatum]:
-        return MinswapDJEDUSDMStablePoolDatum
-
-    @classmethod
-    def pool_policy(cls) -> list[str]:
-        return [
-            "07b0869ed7488657e24ac9b27b3f0fb4f76757f444197b2a38a15c3c444a45442d5553444d2d534c50",
-        ]
+        builder.add_input(utxos[0])
+        builder.add_output(swap_utxo)
+        redeemer = self.create_redeemer()
+        builder.add_redeemer(redeemer)
+        self.handle_collateral(builder, utxos[1])
+        transaction = builder.build()
+        signed_transaction = self.sign_swap_transaction(transaction)
+        return signed_transaction

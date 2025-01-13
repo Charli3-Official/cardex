@@ -11,6 +11,7 @@ from pycardano import PlutusV2Script
 from pycardano import Redeemer
 from pycardano import TransactionOutput
 from pycardano import UTxO
+from pycardano import Transaction
 
 from charli3_dendrite.dataclasses.datums import CancelRedeemer
 from charli3_dendrite.dataclasses.models import Assets
@@ -249,3 +250,15 @@ class AbstractPairState(DendriteBaseModel, ABC):
             NotImplementedError: Only ADA pool TVL is implemented.
         """
         raise NotImplementedError
+
+    def sign_swap_transaction(self, transaction: Transaction) -> Transaction:
+        """Sign the swap transaction.
+
+        Args:
+            transaction: The transaction to be signed.
+
+        Returns:
+            Transaction: The signed transaction.
+        """
+        # Implement the signing logic here
+        return transaction
